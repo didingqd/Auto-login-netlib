@@ -28,4 +28,5 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
         run: npm start
