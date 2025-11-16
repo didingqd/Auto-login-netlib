@@ -22,6 +22,59 @@ if (accountList.length === 0) {
   process.exit(1);
 }
 
+// 获取IP地址和地理位置信息
+async function getIpLocation() {
+  try {
+    // 使用 ip-api.com 免费API获取IP和位置信息
+    const response = await axios.get('http://ip-api.com/json/', {
+      timeout: 5000
+    });
+    
+    if (response.data && response.data.status === 'success') {
+      const data = response.data;
+      const location = `${data.country || ''}${data.regionName ? ' - ' + data.regionName : ''}${data.city ? ' - ' + data.city : ''}`.trim();
+      return {
+        ip: data.query,
+        location: location || '未知位置',
+        country: data.country || '未知',
+        city: data.city || '未知',
+        isp: data.isp || '未知'
+      };
+    }
+  } catch (e) {
+    console.log('⚠️ 获取IP位置信息失败:', e.message);
+  }
+  
+  // 如果第一个API失败，尝试备用API
+  try {
+    const response = await axios.get('https://ipapi.co/json/', {
+      timeout: 5000
+    });
+    
+    if (response.data && response.data.ip) {
+      const data = response.data;
+      const location = `${data.country_name || ''}${data.region ? ' - ' + data.region : ''}${data.city ? ' - ' + data.city : ''}`.trim();
+      return {
+        ip: data.ip,
+        location: location || '未知位置',
+        country: data.country_name || '未知',
+        city: data.city || '未知',
+        isp: data.org || '未知'
+      };
+    }
+  } catch (e) {
+    console.log('⚠️ 备用IP位置API也失败:', e.message);
+  }
+  
+  return {
+    ip: '未知',
+    location: '未知位置',
+    country: '未知',
+    city: '未知',
+    isp: '未知'
+  };
+}
+
 async function sendTelegram(message) {
   if (!token || !chatId) return;
 
@@ -155,15 +208,36 @@ async function loginWithAccount(user, pass) {
     if (pageContent.includes('exclusive owner') || pageContent.includes(user)) {
       console.log(`✅ ${user} - 登录成功`);
       result.success = true;
-      result.message = `✅ ${user} 登录成功`;
+      
+      // 获取IP和位置信息
+      console.log(`🌐 ${user} - 正在获取IP和位置信息...`);
+      const ipInfo = await getIpLocation();
+      result.ipInfo = ipInfo;
+      result.message = `✅ ${user} 登录成功\n📍 IP地址: ${ipInfo.ip}\n🌍 位置: ${ipInfo.location}`;
+      
+      console.log(`📍 ${user} - IP: ${ipInfo.ip}, 位置: ${ipInfo.location}`);
     } else {
       console.log(`❌ ${user} - 登录失败`);
-      result.message = `❌ ${user} 登录失败`;
+      
+      // 即使登录失败也尝试获取IP信息
+      console.log(`🌐 ${user} - 正在获取IP和位置信息...`);
+      const ipInfo = await getIpLocation();
+      result.ipInfo = ipInfo;
+      result.message = `❌ ${user} 登录失败\n📍 IP地址: ${ipInfo.ip}\n🌍 位置: ${ipInfo.location}`;
     }
     
   } catch (e) {
     console.log(`❌ ${user} - 登录异常: ${e.message}`);
-    result.message = `❌ ${user} 登录异常: ${e.message}`;
+    
+    // 即使发生异常也尝试获取IP信息
+    try {
+      console.log(`🌐 ${user} - 正在获取IP和位置信息...`);
+      const ipInfo = await getIpLocation();
+      result.ipInfo = ipInfo;
+      result.message = `❌ ${user} 登录异常: ${e.message}\n📍 IP地址: ${ipInfo.ip}\n🌍 位置: ${ipInfo.location}`;
+    } catch (ipErr) {
+      result.message = `❌ ${user} 登录异常: ${e.message}`;
+    }
   } finally {
     if (page) await page.close();
     await browser.close();
@@ -210,8 +284,16 @@ async function main() {
   
   let summaryMessage = `📊 登录汇总: ${successCount}/${totalCount} 个账号成功\n\n`;
   
-  results.forEach(result => {
-    summaryMessage += `${result.message}\n`;
+  results.forEach((result, index) => {
+    summaryMessage += `${result.message}`;
+    // 如果有IP信息，添加更多详细信息
+    if (result.ipInfo && result.ipInfo.ip !== '未知') {
+      summaryMessage += `\n   └─ ISP: ${result.ipInfo.isp}`;
+    }
+    // 如果不是最后一个结果，添加分隔
+    if (index < results.length - 1) {
+      summaryMessage += `\n\n`;
+    }
   });
   
   // 并行发送 Telegram 和企业微信通知
