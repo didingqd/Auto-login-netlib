@@ -43,7 +43,12 @@ async function sendTelegram(message) {
 }
 
 async function sendWeCom(message) {
-  if (!wecomWebhook) return;
+  if (!wecomWebhook) {
+    console.log('⚠️ 企业微信 webhook 未配置，跳过企业微信通知');
+    return;
+  }
+
+  console.log('📤 正在发送企业微信通知...');
 
   const now = new Date();
   const hkTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
@@ -53,25 +58,55 @@ async function sendWeCom(message) {
 
   try {
     // 企业微信支持 markdown 和 text 两种格式，优先使用 markdown
-    await axios.post(wecomWebhook, {
+    const response = await axios.post(wecomWebhook, {
       msgtype: 'markdown',
       markdown: {
         content: fullMessage
       }
-    }, { timeout: 10000 });
-    console.log('✅ 企业微信通知发送成功');
+    }, {
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // 检查企业微信返回结果
+    if (response.data && response.data.errcode === 0) {
+      console.log('✅ 企业微信通知发送成功');
+      return; // 发送成功，直接返回
+    } else {
+      throw new Error(`企业微信返回错误: ${JSON.stringify(response.data)}`);
+    }
   } catch (e) {
+    console.log(`⚠️ 企业微信 markdown 格式发送失败: ${e.message}`);
+    if (e.response && e.response.data) {
+      console.log(`   错误详情: ${JSON.stringify(e.response.data)}`);
+    }
     // 如果 markdown 失败，尝试使用 text 格式
     try {
-      await axios.post(wecomWebhook, {
+      const response = await axios.post(wecomWebhook, {
         msgtype: 'text',
         text: {
-          content: fullMessage
+          content: fullMessage,
+          mentioned_list: [] // 可以在这里添加 @ 的用户列表
         }
-      }, { timeout: 10000 });
-      console.log('✅ 企业微信通知发送成功 (text格式)');
+      }, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.data && response.data.errcode === 0) {
+        console.log('✅ 企业微信通知发送成功 (text格式)');
+      } else {
+        throw new Error(`企业微信返回错误: ${JSON.stringify(response.data)}`);
+      }
     } catch (e2) {
-      console.log('⚠️ 企业微信发送失败');
+      console.log(`❌ 企业微信发送失败: ${e2.message}`);
+      if (e2.response && e2.response.data) {
+        console.log(`   错误详情: ${JSON.stringify(e2.response.data)}`);
+      }
     }
   }
 }
@@ -139,6 +174,19 @@ async function loginWithAccount(user, pass) {
 
 async function main() {
   console.log(`🔍 发现 ${accountList.length} 个账号需要登录`);
+  
+  // 检查通知配置
+  if (token && chatId) {
+    console.log('✅ Telegram 通知已配置');
+  } else {
+    console.log('⚠️ Telegram 通知未配置');
+  }
+  
+  if (wecomWebhook) {
+    console.log('✅ 企业微信通知已配置');
+  } else {
+    console.log('⚠️ 企业微信通知未配置 (请设置 WECOM_WEBHOOK 环境变量)');
+  }
   
   const results = [];
   
