@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const token = process.env.BOT_TOKEN;
 const chatId = process.env.CHAT_ID;
 const accounts = process.env.ACCOUNTS;
+const wecomWebhook = process.env.WECOM_WEBHOOK;
 
 if (!accounts) {
   console.log('❌ 未配置账号');
@@ -38,6 +39,40 @@ async function sendTelegram(message) {
     console.log('✅ Telegram 通知发送成功');
   } catch (e) {
     console.log('⚠️ Telegram 发送失败');
+  }
+}
+
+async function sendWeCom(message) {
+  if (!wecomWebhook) return;
+
+  const now = new Date();
+  const hkTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  const timeStr = hkTime.toISOString().replace('T', ' ').substr(0, 19) + " HKT";
+
+  const fullMessage = `🎉 Netlib 登录通知\n\n登录时间：${timeStr}\n\n${message}`;
+
+  try {
+    // 企业微信支持 markdown 和 text 两种格式，优先使用 markdown
+    await axios.post(wecomWebhook, {
+      msgtype: 'markdown',
+      markdown: {
+        content: fullMessage
+      }
+    }, { timeout: 10000 });
+    console.log('✅ 企业微信通知发送成功');
+  } catch (e) {
+    // 如果 markdown 失败，尝试使用 text 格式
+    try {
+      await axios.post(wecomWebhook, {
+        msgtype: 'text',
+        text: {
+          content: fullMessage
+        }
+      }, { timeout: 10000 });
+      console.log('✅ 企业微信通知发送成功 (text格式)');
+    } catch (e2) {
+      console.log('⚠️ 企业微信发送失败');
+    }
   }
 }
 
@@ -131,7 +166,11 @@ async function main() {
     summaryMessage += `${result.message}\n`;
   });
   
-  await sendTelegram(summaryMessage);
+  // 并行发送 Telegram 和企业微信通知
+  await Promise.all([
+    sendTelegram(summaryMessage),
+    sendWeCom(summaryMessage)
+  ]);
   
   console.log('\n✅ 所有账号处理完成！');
 }
